@@ -1,0 +1,63 @@
+version: "3.9"
+
+services:
+  # ─── PostgreSQL Database ───────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: nextlearn_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nextlearn
+      POSTGRES_PASSWORD: nextlearn_secret
+      POSTGRES_DB: nextlearn_dev
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nextlearn -d nextlearn_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ─── Next.js App ───────────────────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nextlearn_app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://nextlearn:nextlearn_secret@postgres:5432/nextlearn_dev
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: your-super-secret-key-change-in-production
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      NODE_ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ─── Nginx Reverse Proxy (optional for production-like local test) ──
+  nginx:
+    image: nginx:alpine
+    container_name: nextlearn_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - app
+    profiles:
+      - with-nginx
+
+volumes:
+  postgres_data:
